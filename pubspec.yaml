@@ -7,3 +7,12 @@ environment:
 workspace:
   - packages/*
   - apps/*
+
+# F-02: bind the rumor pubkey to the seal signer (impersonation fix).
+# Upstream nostr_mail 8.0.0 is affected; see the branch's commit message.
+# Drop this once nogringo merges an equivalent fix and publish a release.
+dependency_overrides:
+  nostr_mail:
+    git:
+      url: https://github.com/mptfire/nostr-mail-dart.git
+      ref: fix/seal-rumor-pubkey-binding
