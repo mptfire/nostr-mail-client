@@ -1,6 +1,9 @@
 import 'package:ndk/ndk.dart';
 
-import '../config/nostr_config.dart';
+
+/// Resolves the [Ndk] lazily: at bootstrap the handler exists before the
+/// instance does, and the first auth question only fires once it runs.
+typedef NdkGetter = Ndk Function();
 
 /// The account's own relays and Blossom servers, as (relay urls, server urls).
 typedef OwnHostLists = ({Set<String> relays, Set<String> servers});
@@ -26,8 +29,10 @@ class AuthConsent {
   AuthConsent({
     required OwnHostListsLoader loadOwnLists,
     Set<String> defaults = const {},
+    DateTime Function()? now,
   }) : _loadOwnLists = loadOwnLists,
-       _defaults = defaults.map(_normalize).toSet();
+       _defaults = defaults.map(_normalize).toSet(),
+       _now = now ?? DateTime.now;
 
   /// Loader wired to ndk's NIP-65 and Blossom-server-list use cases.
   static OwnHostListsLoader loaderFor(NdkGetter ndk) => (pubkey) async {
@@ -42,19 +47,36 @@ class AuthConsent {
     );
   };
 
-  /// Resolves the [Ndk] lazily: at bootstrap the handler exists before the
-  /// instance does, and the first auth question only fires once it runs.
-  typedef NdkGetter = Ndk Function();
-
   final OwnHostListsLoader _loadOwnLists;
   final Set<String> _defaults;
 
   String? _loadedFor;
   Set<String> _allowed = const {};
   bool _loading = false;
+  DateTime? _lastFailedAt;
+  DateTime Function() _now;
 
+  /// After a failed own-list load, wait this long before asking again, so
+  /// one offline moment does not turn into a query per auth question.
+  static const _failureRetryDelay = Duration(seconds: 30);
+
+  static const _defaultPorts = {'ws': 80, 'http': 80, 'wss': 443, 'https': 443};
+
+  /// Scheme + host + explicit non-default port + path (trailing '/'). Port
+  /// and case forms of the same host must compare equal; unparseable input
+  /// falls back to the trimmed string.
   static String _normalize(String url) {
-    var u = url.trim().toLowerCase();
+    final trimmed = url.trim().toLowerCase();
+    final parsed = Uri.tryParse(trimmed);
+    if (parsed != null && parsed.hasScheme && parsed.host.isNotEmpty) {
+      final defaultPort = _defaultPorts[parsed.scheme];
+      final port = parsed.hasPort && parsed.port != defaultPort
+          ? ':${parsed.port}'
+          : '';
+      final path = parsed.path == '/' ? '' : parsed.path;
+      return '${parsed.scheme}://${parsed.host}$port$path';
+    }
+    var u = trimmed;
     while (u.endsWith('/')) {
       u = u.substring(0, u.length - 1);
     }
@@ -77,6 +99,13 @@ class AuthConsent {
       // rather than recurse.
       return false;
     }
+    final now = _now();
+    if (_lastFailedAt != null &&
+        now.difference(_lastFailedAt!) < _failureRetryDelay) {
+      // The last load just failed; answer from the cache instead of
+      // hammering the loader on every auth question.
+      return _allowed.contains(host);
+    }
     if (_loadedFor != pubkey) {
       _loading = true;
       try {
@@ -87,10 +116,13 @@ class AuthConsent {
           ...?own?.servers.map(_normalize),
         };
         _loadedFor = pubkey;
+        _lastFailedAt = null;
       } catch (_) {
-        // Keep whatever was allowed before; unknown lists fail closed below.
+        // Unknown lists fail closed. Do not cache the failure as an answer:
+        // own relays stay deniable until restart, so retry after a cooldown
+        // instead.
         _allowed = _defaults;
-        _loadedFor = pubkey;
+        _lastFailedAt = now;
       } finally {
         _loading = false;
       }

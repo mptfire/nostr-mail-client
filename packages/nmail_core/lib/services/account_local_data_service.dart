@@ -18,9 +18,19 @@ class AccountLocalDataService {
   final _storageService = GetIt.I<StorageService>();
 
   Future<void> clearLocalAccountData({required String pubkey}) async {
+    // Enumerate BEFORE the client drops its own store: the wrap and seal ids
+    // that key the NDK payload sidecars live in rows deleted below.
+    final payloadIds = <String>{};
+    if (GetIt.I.isRegistered<NostrMailService>()) {
+      final service = GetIt.I<NostrMailService>();
+      try {
+        payloadIds.addAll(await service.client.storedEventIds(pubkey: pubkey));
+      } catch (_) {}
+      await service.clearLocalAccountData(pubkey: pubkey);
+    }
     await Future.wait([
-      if (GetIt.I.isRegistered<NostrMailService>())
-        GetIt.I<NostrMailService>().clearLocalAccountData(pubkey: pubkey),
+      if (GetIt.I.isRegistered<AddressBookService>())
+        GetIt.I<AddressBookService>().clearLocalAccountData(pubkey: pubkey),
       if (GetIt.I.isRegistered<AddressBookService>())
         GetIt.I<AddressBookService>().clearLocalAccountData(pubkey: pubkey),
       if (GetIt.I.isRegistered<OfflineBroadcast>())
@@ -37,7 +47,10 @@ class AccountLocalDataService {
   /// this the account's own notes, contacts, profile and received mail outlive
   /// its removal and are served straight back from cache the next time the
   /// same key logs in.
-  Future<void> _clearNdkCache(String pubkey) async {
+  Future<void> _clearNdkCache(
+    String pubkey, {
+    Set<String> payloadIds = const {},
+  }) async {
     if (!GetIt.I.isRegistered<Ndk>()) return;
 
     final cache = GetIt.I<Ndk>().config.cache;
@@ -56,6 +69,14 @@ class AccountLocalDataService {
       cache.removeEvents(pubKeys: [pubkey], kinds: [ContactList.kKind]),
       cache.removeNip05(pubkey),
     ]);
+
+    // The drift cache keeps decrypted payload sidecars keyed by wrap id AND
+    // by seal id; the wrap-keyed cleanup above misses the seal-layer copies,
+    // which hold the decrypted email. Purge them explicitly so plaintext
+    // mail does not outlive the account (audit finding N-1).
+    for (final id in payloadIds) {
+      await cache.removeDecryptedEventPayloadRecords(id);
+    }
 
     if (GetIt.I.isRegistered<MetadataService>()) {
       GetIt.I<MetadataService>().forget(pubkey);

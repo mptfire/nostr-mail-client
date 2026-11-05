@@ -132,10 +132,25 @@ Future<void> _initApp({
   // pubkey. See AuthConsent; this replaces the previous blanket-true handler
   // that authenticated on every relay and server a mail happened to name.
   final authConsent = AuthConsent(
-    loadOwnLists: AuthConsent.loaderFor(() => GetIt.I<Ndk>()),
+    loadOwnLists: (pubkey) async {
+      final own = await AuthConsent.loaderFor(() => GetIt.I<Ndk>())(pubkey);
+      // Kind 10013 private relays are the account's own too and ndk has no
+      // usecase for them, so source them from the mail layer. Best effort:
+      // the defaults below already cover the recommended private relay.
+      if (GetIt.I.isRegistered<NostrMailService>()) {
+        try {
+          own.relays
+              .addAll(await GetIt.I<NostrMailService>().getPrivateRelays());
+        } catch (_) {}
+      }
+      return own;
+    },
     defaults: {
-      ...NostrConfig.bootstrapRelays,
+      ...NostrConfig.popularRelays,
       ...NostrConfig.discoveryRelays,
+      ...NostrConfig.recommendedDmRelays,
+      ...NostrConfig.recommendedPrivateRelays,
+      ...NostrConfig.communityThemeRelays,
       ...NostrConfig.recommendedBlossomServers,
     },
   );
