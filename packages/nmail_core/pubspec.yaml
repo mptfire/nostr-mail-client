@@ -35,7 +35,9 @@ dependencies:
   flutter_widget_from_html_core:
     git:
       url: https://github.com/nogringo/flutter_widget_from_html.git
-      ref: apps
+      # Pinned to the audited commit; was the mutable `apps` branch
+      # (backport of eef6dad). Bump deliberately after review.
+      ref: 89404a544f32799490c2413819a7cc185173922b
       path: packages/core
   get_it: ^9.3.0
   go_router: ^18.0.2
