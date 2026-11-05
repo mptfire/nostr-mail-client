@@ -22,6 +22,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 import 'package:nmail_core/app/auth_consent.dart';
+import 'package:nmail_core/config/nostr_config.dart';
 import 'package:nmail_core/app/config/distribution_config.dart';
 import 'package:nmail_core/app/widgets/pending_requests_overlay.dart';
 import 'package:nmail_core/app/widgets/window_caption_bar.dart';
