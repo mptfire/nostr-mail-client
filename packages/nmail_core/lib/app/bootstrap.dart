@@ -135,6 +135,7 @@ Future<void> _initApp({
   final authConsent = AuthConsent(
     loadOwnLists: (pubkey) async {
       final own = await AuthConsent.loaderFor(() => GetIt.I<Ndk>())(pubkey);
+      if (own == null) return own; // unknown lists stay conservative
       // Kind 10013 private relays are the account's own too and ndk has no
       // usecase for them, so source them from the mail layer. Best effort:
       // the defaults below already cover the recommended private relay.

@@ -24,7 +24,7 @@ class AccountLocalDataService {
     if (GetIt.I.isRegistered<NostrMailService>()) {
       final service = GetIt.I<NostrMailService>();
       try {
-        payloadIds.addAll(await service.client.storedEventIds(pubkey: pubkey));
+        payloadIds.addAll(await service.client.storedEventIds(recipientPubkey: pubkey));
       } catch (_) {}
       await service.clearLocalAccountData(pubkey: pubkey);
     }
